@@ -1813,29 +1813,37 @@ const App = () => {
     const recognitionRef = useRef(null);
     const audioRef = useRef(null);
 
-    // --- Firebase Auth & Chat Listener ---
-    useEffect(() => {
-        if (!auth) return;
-        onAuthStateChanged(auth, async u => {
-            if (!u) try { (typeof __initial_auth_token != 'undefined' && __initial_auth_token) ? await signInWithCustomToken(auth, __initial_auth_token) : await signInAnonymously(auth); } catch (e) { console.error("Auth failed:", e); }
-            setUserId(auth.currentUser?.uid || '');
-            setIsAuthReady(true);
-        });
-    }, []);
-    useEffect(() => {
-        if (!userId || !db) return;
-        const q = query(collection(db, `artifacts/${appId}/users/${userId}/chatHistory`), orderBy('timestamp'));
-        return onSnapshot(q, snap => setChatMessages(snap.docs.map(d => d.data())));
-    }, [userId, db]);
-    useEffect(() => { chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
-
-    const stopSpeech = () => {
-        if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current.currentTime = 0;
-            audioRef.current = null;
+// --- Firebase Auth & Chat Listener ---
+useEffect(() => {
+    if (!auth) return;
+    onAuthStateChanged(auth, async (user) => {
+        if (!user) {
+            try {
+                await signInAnonymously(auth);
+            } catch (e) {
+                console.error("Anonymous sign-in failed:", e);
+            }
         }
-    };
+        setUserId(auth.currentUser?.uid || '');
+        setIsAuthReady(true);
+    });
+}, []);
+
+useEffect(() => {
+    if (!userId || !db) return;
+    const q = query(collection(db, `artifacts/${appId}/users/${userId}/chatHistory`), orderBy('timestamp'));
+    return onSnapshot(q, snap => setChatMessages(snap.docs.map(d => d.data())));
+}, [userId, db]);
+
+useEffect(() => { chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
+
+const stopSpeech = () => {
+    if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current = null;
+    }
+};
 
     // --- TTS Function ---
     const speakText = useCallback(async (text) => {
