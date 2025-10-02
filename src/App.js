@@ -1941,20 +1941,32 @@ const stopSpeech = () => {
         const userQuery = `Context: The user has selected ${language} as their language. Their query is: "${chatInput}".`;
         const fullPrompt = `${systemPrompt}\n\nChat History:\n${chatHistoryContext}\n\n${userQuery}\n\nAI:`;
 
-        try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
-            const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] }) });
-            if (!response.ok) throw new Error("AI response failed.");
-            const result = await response.json();
-            const aiText = (result.candidates?.[0]?.content?.parts?.[0]?.text || t('havingTroubleConnecting')).replace(/\*/g, '');
-            
-            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chatHistory`), { text: aiText, sender: 'ai', timestamp: serverTimestamp() });
-            speakText(aiText);
+// REPLACE the existing try...catch block with this one
+try {
+    const apiUrl = `/.netlify/functions/chat`;
 
-        } catch (err) {
-            console.error("Chat AI Error:", err);
-            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chatHistory`), { text: t('havingTroubleConnecting'), sender: 'ai', timestamp: serverTimestamp() });
-        } finally { setIsChatThinking(false); }
+    const response = await fetch(apiUrl, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ fullPrompt: fullPrompt }) 
+    });
+
+    if (!response.ok) {
+        throw new Error("The chat function failed.");
+    }
+
+    const result = await response.json();
+    const aiText = result.text || t('havingTroubleConnecting');
+
+    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chatHistory`), { text: aiText, sender: 'ai', timestamp: serverTimestamp() });
+    speakText(aiText);
+
+} catch (err) {
+    console.error("Chat AI Error:", err);
+    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chatHistory`), { text: t('havingTroubleConnecting'), sender: 'ai', timestamp: serverTimestamp() });
+} finally { 
+    setIsChatThinking(false); 
+}
     };
 
     const renderModule = () => {
