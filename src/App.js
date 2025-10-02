@@ -854,7 +854,7 @@ const LanguageProvider = ({ children }) => {
 
 // --- Constants & Static Data ---
 const OPENWEATHER_API_KEY = "9f44421718645b350d7164e36778f917";
-const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
+const GEMINI_API_KEY = "AIzaSyCtPq_0a_ibn9alWuFRCgOwABxHv1_L6ew";
 const DEFAULT_LOCATION_NAME = "Visakhapatnam";
 const DEFAULT_STATE_NAME = "Andhra Pradesh";
 
