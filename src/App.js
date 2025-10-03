@@ -4313,6 +4313,20 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, collection, doc, onSnapshot, query, addDoc, serverTimestamp, orderBy, updateDoc, deleteDoc, arrayUnion, getDocs, where, limit } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
+
+
+// --- Netlify Chatbot Function Call ---
+const sendMessage = async (message) => {
+  const res = await fetch('/.netlify/functions/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message })
+  });
+  const data = await res.json();
+  return data.reply;
+};
+
+
   Zap, Cloud, Droplets, Leaf, Shield, IndianRupee, Tractor, BrainCircuit, Bot, MessageSquare,
   Phone, Search, Star, Trash2, Siren, MapPin, Layers, FilePlus, Milestone, Wallet, Target,
   Percent, Wrench, ShoppingBag, Plus, Bell, TrendingUp, TrendingDown, Calendar, CheckSquare, Square,
@@ -6458,5 +6472,3 @@ const RootApp = () => (
 );
 
 export default RootApp;
-
-
