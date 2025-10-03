@@ -1796,7 +1796,7 @@ const KisanMitraAIModule = ({ userId, db, speakText }) => {
 
 // --- Main KisanSuvidha AI App ---
 const App = () => {
-    const [userId, setUserId] = useState('');
+    const [userId, setUserId] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
     const [activeModule, setActiveModule] = useState('dashboard');
     const [isChatOpen, setIsChatOpen] = useState(false);
