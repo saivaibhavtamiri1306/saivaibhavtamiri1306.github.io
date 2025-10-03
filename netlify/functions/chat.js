@@ -1,7 +1,10 @@
-// netlify/functions/chat.js
-
 exports.handler = async function(event) {
   try {
+    if (!process.env.GEMINI_API_KEY) {
+      console.error("❌ Missing GEMINI_API_KEY environment variable");
+      return { statusCode: 500, body: "Server misconfiguration: no API key" };
+    }
+
     const body = event.body ? JSON.parse(event.body) : {};
     const model = body.model || 'gemini-2.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
