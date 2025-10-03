@@ -20,7 +20,6 @@ const firebaseConfig = {
   messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
-
 const appId = firebaseConfig.appId;
 
 let app, db, auth, storage;
@@ -32,7 +31,6 @@ try {
 } catch (error) {
   console.error("Error initializing Firebase:", error);
 }
-
 // --- i18n & Language Management ---
 const translations = {
     'en-IN': {
