@@ -1,41 +1,29 @@
-// Located at: /netlify/functions/chat.js
+// netlify/functions/chat.js
+const fetch = require('node-fetch');
 
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-// Get your API key from Netlify environment variables
-const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
-
-exports.handler = async function (event, context) {
-  // Only allow POST requests
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
-
+exports.handler = async function(event) {
   try {
-    const { fullPrompt } = JSON.parse(event.body);
+    const body = event.body ? JSON.parse(event.body) : {};
+    // Expect the front-end to forward the full request payload (or fullPrompt)
+    // Example: { fullPrompt: "...", model: "gemini-2.5-flash" }
+    const model = body.model || 'gemini-2.5-flash-preview-05-20'; // pick your model
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-    if (!fullPrompt) {
-      return { statusCode: 400, body: "Bad Request: fullPrompt is missing." };
-    }
-
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    const text = response.text();
-
-    return {
-      statusCode: 200,
+    const response = await fetch(url, {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
+        'x-goog-api-key': process.env.GEMINI_API_KEY
       },
-      body: JSON.stringify({ text: text }),
-    };
-  } catch (error) {
-    console.error("Error calling Gemini API:", error);
+      body: JSON.stringify(body.payload || body)
+    });
+
+    const data = await response.json();
     return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Internal Server Error: Failed to get response from AI." }),
+      statusCode: response.ok ? 200 : response.status,
+      body: JSON.stringify(data)
     };
+  } catch (err) {
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };
