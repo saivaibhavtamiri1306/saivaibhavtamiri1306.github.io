@@ -1,20 +1,21 @@
-// At the top of your app.js, after the other 'require' statements
+// netlify/functions/chat.js
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// IMPORTANT: In Netlify, you'll set an environment variable, for example, GEMINI_API_KEY.
-// Then you access it here.
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Your existing app.post('/api/chat', ...) route
-app.post('/api/chat', async (req, res) => {
+exports.handler = async function(event) {
   try {
-    const userMessage = req.body.message;
+    const body = JSON.parse(event.body || "{}");
+    const userMessage = body.message;
 
     if (!userMessage) {
-      return res.status(400).json({ error: 'Message is required.' });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Message is required." })
+      };
     }
 
-    // Initialize the model
+    // Initialize the Gemini model
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
     // Generate the response
@@ -22,11 +23,16 @@ app.post('/api/chat', async (req, res) => {
     const response = await result.response;
     const text = response.text();
 
-    // Send the AI's reply back to the front-end
-    res.json({ reply: text });
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ reply: text })
+    };
 
   } catch (error) {
-    console.error('Error calling Gemini API:', error);
-    res.status(500).json({ error: 'Failed to get a response from the AI.' });
+    console.error("Error calling Gemini API:", error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Failed to get a response from the AI." })
+    };
   }
-});
+};
