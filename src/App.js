@@ -981,6 +981,17 @@ const fetchWithRetry = async (url, options, maxRetries = 3) => {
     throw new Error(`API call failed after ${maxRetries} retries.`);
 };
 
+// --- Gemini wrapper to attach required API key header and reuse fetchWithRetry ---
+const geminiFetch = (url, options = {}) => {
+  // Merge headers: preserve developer-provided headers and add the required x-goog-api-key
+  const headers = Object.assign({}, options.headers || {}, {
+    'x-goog-api-key': GEMINI_API_KEY,
+    'Accept': 'application/json'
+  });
+  return fetchWithRetry(url, Object.assign({}, options, { headers }));
+};
+
+
 
 // --- Helper Components ---
 const CustomModal = ({ isOpen, onClose, title, children, size = 'md' }) => {
@@ -1263,7 +1274,7 @@ const CropHealthAIModule = ({ userId, db, storage, appId, openPlotModal, isAuthR
         try {
             const base64ImageData = imagePreview.split(',')[1];
             const diagnosisPrompt = `Identify any diseases, pests, or nutrient deficiencies on this ${selectedPlot.crop} leaf. Be specific. If healthy, state that. Provide a concise summary. Respond in the language with this code: ${language}.`;
-            const visionApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            const visionApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
 
             const visionPayload = { contents: [{ parts: [{ text: diagnosisPrompt }, { inlineData: { mimeType: imageFile.type, data: base64ImageData } }] }] };
             const visionResponse = await fetchWithRetry(visionApiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(visionPayload) });
@@ -1358,7 +1369,7 @@ const CropAdvisorAIModule = ({ userId, db, speakText }) => {
         const userQuery = `Location: ${DEFAULT_LOCATION_NAME}. Soil & environment data:\n- N: ${formData.nitrogen} kg/ha\n- P: ${formData.phosphorus} kg/ha\n- K: ${formData.potassium} kg/ha\n- pH: ${formData.ph}\n- Temp: ${formData.temperature}°C\n- Humidity: ${formData.humidity}%\n- Rainfall: ${formData.rainfall} mm. Recommend best crop.`;
 
         try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
             const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: userQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json" } }) });
             if (!response.ok) throw new Error("AI analysis failed.");
             const result = await response.json();
@@ -1421,7 +1432,7 @@ const AgriMarketAIModule = ({ userId, db, location, speakText }) => {
         const userQuery = `Analyze the market for '${searchQuery}' in '${location.city}, ${location.state}'.`;
 
         try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
             const payload = { 
                 contents: [{ parts: [{ text: userQuery }] }], 
                 systemInstruction: { parts: [{ text: systemPrompt }] }, 
@@ -1506,7 +1517,7 @@ const GramSevaAIModule = ({ userId, db, speakText }) => {
         const userQuery = `I am a farmer in ${form.state}. I am a ${form.farmerType} farmer, primarily growing ${form.crop}. I am looking for schemes related to '${form.need}'. Provide relevant central and state government schemes.`;
 
         try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
             const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: userQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json" } }) });
             if (!response.ok) throw new Error("AI analysis failed.");
             const result = await response.json();
@@ -1582,7 +1593,7 @@ const KisanKhataAIModule = ({ userId, db, speakText }) => {
         const userQuery = `Create a detailed budget for a farmer growing ${newBudgetForm.crop} on ${newBudgetForm.area} acres of land in the ${newBudgetForm.region} region of India.`;
 
         try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
             const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: userQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json" } }) });
             if (!response.ok) throw new Error("AI analysis failed.");
             const result = await response.json();
@@ -1671,7 +1682,7 @@ const YantraSahayakAIModule = ({ userId, db, openMachineryModal, speakText }) =>
         const userQuery = `I have a problem with my ${machine.name} (${machine.type}). The issue is: "${aiAdvisorForm.issue}". Provide a diagnosis.`;
 
         try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
             const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: userQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json" } }) });
             if (!response.ok) throw new Error("AI analysis failed.");
             const result = await response.json();
@@ -1743,7 +1754,7 @@ const KisanMitraAIModule = ({ userId, db, speakText }) => {
         const userQuery = `A farmer from ${selectedState} has this query: "${queryText}". Which helpline should they contact?`;
 
         try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
             const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: userQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json" } }) });
             if (!response.ok) throw new Error("AI analysis failed.");
             const result = await response.json();
@@ -1861,7 +1872,7 @@ const stopSpeech = () => {
         }
         const payload = { model: "gemini-2.5-flash-preview-tts", contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: langConfig.voice } } } } };
         try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${GEMINI_API_KEY}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`;
             const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             
             if (!response.ok) {
@@ -2150,6 +2161,5 @@ const RootApp = () => (
 );
 
 export default RootApp;
-
 
 
