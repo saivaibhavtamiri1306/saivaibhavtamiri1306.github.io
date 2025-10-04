@@ -1819,26 +1819,56 @@ const App = () => {
 // --- Firebase Auth & Chat Listener ---
 useEffect(() => {
     if (!auth) return;
-    onAuthStateChanged(auth, async (user) => {
-        if (!user) {
+
+    // This sets up the authentication listener.
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            // If a user is found (or has just signed in), set their ID.
+            setUserId(user.uid);
+            setIsAuthReady(true); // <== Confirms that auth is complete.
+        } else {
+            // If no user is found, attempt to sign them in anonymously.
             try {
                 await signInAnonymously(auth);
+                // The onAuthStateChanged listener will run again with the new user.
             } catch (e) {
                 console.error("Anonymous sign-in failed:", e);
+                setIsAuthReady(true); // <== Set ready even on failure to avoid getting stuck.
             }
         }
-        setUserId(auth.currentUser?.uid || '');
-        setIsAuthReady(true);
     });
+
+    // Cleanup the listener when the component unmounts.
+    return () => unsubscribe();
 }, []);
 
 useEffect(() => {
-    if (!userId || !db) return;
-    const q = query(collection(db, `artifacts/${appId}/users/${userId}/chatHistory`), orderBy('timestamp'));
-    return onSnapshot(q, snap => setChatMessages(snap.docs.map(d => d.data())));
-}, [userId, db]);
+    // This effect now waits for auth to be ready AND for a userId to exist.
+    if (!isAuthReady || !userId || !db) return; // <== Change: Added isAuthReady check.
 
-useEffect(() => { chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
+    // Creates a query to get chat messages, ordered by time.
+    const q = query(collection(db, `artifacts/${appId}/users/${userId}/chatHistory`), orderBy('timestamp'));
+    
+    // Sets up the real-time listener.
+    const unsubscribe = onSnapshot(q, 
+        (snap) => {
+            setChatMessages(snap.docs.map(d => d.data()));
+        },
+        (error) => {
+            // This will log permission errors if they still occur.
+            console.error("Firestore snapshot listener error:", error);
+        }
+    );
+
+    // Cleanup the listener when the component unmounts.
+    return () => unsubscribe(); 
+    
+}, [userId, db, isAuthReady]); // <== Change: Added isAuthReady to the dependency array.
+
+useEffect(() => { 
+    // This hook is for UI and does not need changes.
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); 
+}, [chatMessages]);
 
 const stopSpeech = () => {
     if (audioRef.current) {
@@ -1847,7 +1877,6 @@ const stopSpeech = () => {
         audioRef.current = null;
     }
 };
-
     // --- TTS Function ---
     const speakText = useCallback(async (text) => {
         if (!isSpeechEnabled) return;
