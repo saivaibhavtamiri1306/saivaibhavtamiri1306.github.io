@@ -1,10 +1,6 @@
 /* eslint-disable no-unused-vars */
 const fetch = require('node-fetch');
 
-/**
- * Netlify serverless function to handle chat requests to the Gemini API.
- * This function acts as a secure proxy to avoid exposing the API key on the client-side.
- */
 exports.handler = async (event, context) => {
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
@@ -15,19 +11,17 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // --- Get API Key from Environment Variables ---
-  // Ensure you have REACT_APP_GEMINI_API_KEY set in your Netlify build environment.
   const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
 
   if (!GEMINI_API_KEY) {
+    console.error("FATAL: GEMINI_API_KEY environment variable not set.");
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'API key is not configured.' }),
+      body: JSON.stringify({ error: 'API key is not configured on the server.' }),
       headers: { 'Content-Type': 'application/json' },
     };
   }
 
-  // --- Parse Request Body ---
   let fullPrompt;
   try {
     const body = JSON.parse(event.body);
@@ -38,12 +32,11 @@ exports.handler = async (event, context) => {
   } catch (error) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: 'Bad Request: Missing or invalid "fullPrompt" in the request body.' }),
+      body: JSON.stringify({ error: 'Bad Request: Missing or invalid "fullPrompt".' }),
       headers: { 'Content-Type': 'application/json' },
     };
   }
   
-  // --- Call Gemini API ---
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
 
   const payload = {
@@ -55,14 +48,7 @@ exports.handler = async (event, context) => {
       topK: 40,
       topP: 0.95,
       maxOutputTokens: 1024,
-    },
-    // Optional Safety Settings: Adjust as needed
-    safetySettings: [
-        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-    ],
+    }
   };
 
   try {
@@ -72,6 +58,40 @@ exports.handler = async (event, context) => {
       body: JSON.stringify(payload),
     });
     
-    // Handle non-successful responses from the API
     if (!apiResponse.ok) {
-        const errorBody = await apiResponse.
+        const errorBody = await apiResponse.json();
+        console.error('Gemini API Error:', errorBody);
+        return {
+            statusCode: apiResponse.status,
+            body: JSON.stringify({ error: `Gemini API Error: ${errorBody.error?.message || 'Unknown error'}` }),
+            headers: { 'Content-Type': 'application/json' },
+        };
+    }
+
+    const result = await apiResponse.json();
+    const aiText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!aiText) {
+       console.warn('AI response was empty or blocked.');
+       return {
+         statusCode: 200,
+         body: JSON.stringify({ text: "I'm sorry, I could not generate a response for that." }),
+         headers: { 'Content-Type': 'application/json' },
+       };
+    }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ text: aiText }),
+      headers: { 'Content-Type': 'application/json' },
+    };
+
+  } catch (error) {
+    console.error('Internal Server Error:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'An internal server error occurred.' }),
+      headers: { 'Content-Type': 'application/json' },
+    };
+  }
+};
