@@ -1,72 +1,77 @@
-// Import the Google AI SDK
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+/* eslint-disable no-unused-vars */
+const fetch = require('node-fetch');
 
-// IMPORTANT: Make sure you have set GEMINI_API_KEY in your Netlify Environment Variables
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-// This is the main handler function for the Netlify serverless function
-exports.handler = async (event) => {
-  
-  // Standard headers for CORS (Cross-Origin Resource Sharing) to allow your frontend to call this function
-  const headers = {
-    'Access-Control-Allow-Origin': '*', // Allows any domain to access this function
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS'
-  };
-
-  // The browser first sends an OPTIONS request to check CORS policy
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 204, // No Content
-      headers,
-      body: ''
-    };
-  }
-  
-  // We only want to handle POST requests
+/**
+ * Netlify serverless function to handle chat requests to the Gemini API.
+ * This function acts as a secure proxy to avoid exposing the API key on the client-side.
+ */
+exports.handler = async (event, context) => {
+  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
-    return { 
-        statusCode: 405, 
-        headers,
-        body: JSON.stringify({ error: 'Method Not Allowed. Please use POST.' }) 
+    return {
+      statusCode: 405,
+      body: JSON.stringify({ error: 'Method Not Allowed' }),
+      headers: { 'Content-Type': 'application/json' },
     };
   }
 
-  try {
-    // 1. Parse the incoming request body from the frontend
-    // Your App.js sends a body like: JSON.stringify({ fullPrompt: fullPrompt })
-    const { fullPrompt } = JSON.parse(event.body);
+  // --- Get API Key from Environment Variables ---
+  // Ensure you have REACT_APP_GEMINI_API_KEY set in your Netlify build environment.
+  const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
 
-    // 2. Check if the prompt exists
-    if (!fullPrompt) {
-      return { 
-          statusCode: 400, 
-          headers,
-          body: JSON.stringify({ error: 'Request body must contain a "fullPrompt" key.' }) 
-      };
-    }
-
-    // 3. Call the Gemini API to get the chat completion
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    const text = response.text();
-
-    // 4. Send the successful response back to the frontend
-    // Your App.js expects a JSON object with a "text" key: const aiText = result.text
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ text: text }),
-    };
-    
-  } catch (error) {
-    // If anything goes wrong, log the error and send a server error response
-    console.error('Error in Netlify function:', error);
+  if (!GEMINI_API_KEY) {
     return {
       statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'An internal server error occurred.' }),
+      body: JSON.stringify({ error: 'API key is not configured.' }),
+      headers: { 'Content-Type': 'application/json' },
     };
   }
-};
+
+  // --- Parse Request Body ---
+  let fullPrompt;
+  try {
+    const body = JSON.parse(event.body);
+    fullPrompt = body.fullPrompt;
+    if (!fullPrompt || typeof fullPrompt !== 'string') {
+      throw new Error('Invalid prompt provided.');
+    }
+  } catch (error) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Bad Request: Missing or invalid "fullPrompt" in the request body.' }),
+      headers: { 'Content-Type': 'application/json' },
+    };
+  }
+  
+  // --- Call Gemini API ---
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+
+  const payload = {
+    contents: [{
+      parts: [{ text: fullPrompt }],
+    }],
+    generationConfig: {
+      temperature: 0.7,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 1024,
+    },
+    // Optional Safety Settings: Adjust as needed
+    safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+    ],
+  };
+
+  try {
+    const apiResponse = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    
+    // Handle non-successful responses from the API
+    if (!apiResponse.ok) {
+        const errorBody = await apiResponse.
