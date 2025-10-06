@@ -1111,116 +1111,92 @@ const WeatherModule = ({ apiKey, location, setLocation }) => {
 };
 
 
-// 2. Soil Health Module (with Add Plot functionality)
-const SoilHealthModule = ({ userId, db, openPlotModal }) => {
-    const [plots, setPlots] = useState([]);
-    const [selectedPlotId, setSelectedPlotId] = useState('');
-    const [latestReading, setLatestReading] = useState(null);
-    const [modalOpen, setModalOpen] = useState(false);
-    const [readingForm, setReadingForm] = useState({ ph: 7, moisture: 50, nitrogen: 50, phosphorus: 20, potassium: 100 });
-    const { t } = useLanguage();
+// 5. Agri-Market AI Module (with Grounded Search)
+const AgriMarketAIModule = ({ userId, db, location, speakText }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [analysis, setAnalysis] = useState(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [error, setError] = useState('');
+    const { t, language } = useLanguage();
 
-    useEffect(() => {
-        if (!userId || !db) return;
-        const q = query(collection(db, `artifacts/${appId}/users/${userId}/plots`), orderBy('createdAt', 'desc'));
-        return onSnapshot(q, snap => {
-            const fetchedPlots = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setPlots(fetchedPlots);
-            if (!selectedPlotId && fetchedPlots.length > 0) {
-                setSelectedPlotId(fetchedPlots[0].id);
-            } else if (selectedPlotId && !fetchedPlots.find(p => p.id === selectedPlotId)) {
-                setSelectedPlotId(fetchedPlots.length > 0 ? fetchedPlots[0].id : '');
+    const handleAnalyze = async () => {
+        if (!searchQuery.trim()) return;
+        setIsAnalyzing(true); setError(''); setAnalysis(null);
+        
+        const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        const systemPrompt = `You are 'MarketMind AI', an agricultural market analyst for Indian farmers. Use your search tool to find the latest market data for today, ${currentDate}. Your response MUST be a single, valid JSON object and nothing else. Do not wrap it in markdown backticks. The JSON object must have these keys: "marketSnapshot" (an object with "priceRange" in INR/quintal and "volatility"), "demandAndTrend" (an object with "demand" and "priceTrend"), "keyDrivers" (an array of strings), and "strategicRecommendation" (an object with "strategy" and "reasoning"). Your entire response must be in the language with this code: ${language}.`;
+        const userQuery = `Analyze the market for '${searchQuery}' in '${location.city}, ${location.state}'.`;
+
+        try {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            
+            // This payload correctly uses the Search tool
+            const payload = { 
+                contents: [{ parts: [{ text: userQuery }] }], 
+                systemInstruction: { parts: [{ text: systemPrompt }] }, 
+                tools: [{ "google_search": {} }],
+            };
+
+            const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(`API Error: ${response.status} - ${JSON.stringify(errorBody)}`);
             }
-        });
-    }, [userId, db, selectedPlotId]);
-
-    const selectedPlot = useMemo(() => plots.find(p => p.id === selectedPlotId), [plots, selectedPlotId]);
-
-    useEffect(() => {
-        if (!selectedPlot || !userId || !db) {
-            setLatestReading(null);
-            return;
-        }
-        const rQuery = query(collection(db, `artifacts/${appId}/users/${userId}/plots/${selectedPlot.id}/readings`), orderBy('timestamp', 'desc'));
-        return onSnapshot(rQuery, s => {
-            const d = s.docs.map(doc => ({ ...doc.data(), id: doc.id, timestamp: doc.data().timestamp?.toDate() }));
-            setLatestReading(d.length > 0 ? d[0] : null);
-        });
-    }, [selectedPlot, userId, db]);
-
-    const handleAddReading = async (e) => {
-        e.preventDefault();
-        if (!selectedPlot || !userId || !db) return;
-        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/plots/${selectedPlot.id}/readings`), { ...readingForm, timestamp: serverTimestamp() });
-        setModalOpen(false);
-    };
-
-const healthScore = useMemo(() => {
-        if (!latestReading || !selectedPlot?.crop) return 0;
-
-        // NEW: Check if the crop name exists in our data list before using it
-        const ideals = CROP_DATA_SOIL[selectedPlot.crop];
-        if (!ideals) {
-            console.error(`Crop name "${selectedPlot.crop}" not found in CROP_DATA_SOIL. Health score cannot be calculated.`);
-            return 0; // Return 0 and prevent a crash if no match is found
-        }
-
-        let score = 0;
-        const metrics = ['ph', 'moisture', 'nitrogen', 'phosphorus', 'potassium'];
-        metrics.forEach(m => {
-            // Ensure the reading and ideal values exist before comparing
-            if (latestReading[m] !== undefined && ideals[m]) {
-                if (latestReading[m] >= ideals[m][0] && latestReading[m] <= ideals[m][1]) {
-                    score += 1;
+            
+            const result = await response.json();
+            let aiResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            
+            // --- PROTECTION 1: This try/catch block safely parses the AI's response ---
+            let parsedAnalysis;
+            try {
+                const jsonStartIndex = aiResponseText.indexOf('{');
+                if (jsonStartIndex === -1) {
+                    throw new Error("No JSON object found in the AI response.");
                 }
+                const jsonString = aiResponseText.substring(jsonStartIndex);
+                parsedAnalysis = JSON.parse(jsonString.replace(/```json/g, '').replace(/```/g, '').trim());
+            } catch (e) {
+                console.error("Failed to parse AI response JSON:", e);
+                throw new Error("The AI returned data in an invalid format.");
             }
-        });
-        return (score / metrics.length) * 100;
-    }, [latestReading, selectedPlot]);
 
+            setAnalysis(parsedAnalysis);
+
+            const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis?.strategicRecommendation?.strategy || 'check the details'}. ${parsedAnalysis?.strategicRecommendation?.reasoning || ''}`;
+            speakText(speechSummary);
+            
+        } catch (err) {
+            console.error("Analysis Error:", err);
+            setError(`${t('failedToGetAnalysis')} ${err.message}`);
+        } finally { 
+            setIsAnalyzing(false); 
+        }
+    };
+    
     return (
-        <SectionCard title={t('soilHealth')} icon={Droplets}>
-            {plots.length > 0 ? (
-                <>
-                    <div className="flex gap-2 mb-4">
-                        <select value={selectedPlotId} onChange={e => setSelectedPlotId(e.target.value)} className="flex-grow p-2 border border-gray-300 rounded-md">
-                            {plots.map(p => <option key={p.id} value={p.id}>{p.name} ({p.crop})</option>)}
-                        </select>
-                        <button onClick={() => setModalOpen(true)} className="bg-green-600 text-white p-2 rounded-md hover:bg-green-700"><Plus size={20} /></button>
-                    </div>
-
-                    {selectedPlot && latestReading ? (
-                        <div className="mt-4 space-y-3">
-                            <p className="text-xl font-bold text-green-700">{t('healthScore')} {healthScore.toFixed(0)}%</p>
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                                <p>{t('ph')}: {latestReading.ph}</p>
-                                <p>{t('moisture')}: {latestReading.moisture}%</p>
-                                <p>{t('nitrogen')}: {latestReading.nitrogen}ppm</p>
-                                <p>{t('phosphorus')}: {latestReading.phosphorus}ppm</p>
-                                <p>{t('potassium')}: {latestReading.potassium}ppm</p>
-                            </div>
-                        </div>
-                    ) : (
-                        <p className="text-center text-gray-500">{t('selectPlotOrAddReading')}</p>
-                    )}
-                </>
-            ) : (
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <p className="text-gray-600">{t('noPlotsFound')}</p>
-                    <button onClick={openPlotModal} className="mt-2 text-sm text-green-600 font-semibold hover:underline">{t('addYourFirstPlot')}</button>
+        <SectionCard title={t('agriMarketAI')} icon={IndianRupee}>
+             <p className="text-sm text-gray-500 mb-2">{t('location')} {location.city}, {location.state}</p>
+            <div className="flex gap-2 mb-4">
+                <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder={t('analyzeCropMarket')} className="flex-grow p-2 border rounded" />
+                <button onClick={handleAnalyze} disabled={isAnalyzing} className="bg-green-600 text-white p-2 rounded-md hover:bg-green-700"><Search size={20} /></button>
+            </div>
+            {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+            {isAnalyzing && <p className="text-center p-2 text-gray-600 animate-pulse">{t('fetchingMarketData')}</p>}
+            {analysis && (
+                <div className="relative mt-4 p-3 bg-green-50 text-green-800 rounded-md text-sm animate-fade-in">
+                    <button onClick={() => speakText(`Market analysis for ${searchQuery}. The recommended strategy is to ${analysis.strategicRecommendation?.strategy}. ${analysis.strategicRecommendation?.reasoning}`)} className="absolute top-2 right-2 p-1 hover:bg-green-100 rounded-full"><Volume2 size={16}/></button>
+                    <p className="font-bold text-base">{searchQuery} Analysis</p>
+                    {/* --- PROTECTION 2: Optional chaining (?.) is used below to safely display the data --- */}
+                    <p><span className="font-semibold">{t('priceRange')}</span> {analysis.marketSnapshot?.priceRange}</p>
+                    <p className="font-semibold">{t('demand')} {analysis.demandAndTrend?.demand}</p>
+                    <p className="font-semibold">{t('priceTrend')} {analysis.demandAndTrend?.priceTrend}</p>
+                    <p className="font-semibold">{t('volatility')} {analysis.marketSnapshot?.volatility}</p>
+                    <p className="font-bold mt-2">{t('strategy')} {analysis.strategicRecommendation?.strategy}</p>
+                    <p>{analysis.strategicRecommendation?.reasoning || "Detailed reasoning available."}</p>
                 </div>
             )}
-            
-            <CustomModal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={t('addSoilReading')}>
-                <form onSubmit={handleAddReading} className="space-y-4">
-                    <div><label className="block text-sm">{t('ph')}</label><input type="number" step="0.1" value={readingForm.ph} onChange={e => setReadingForm({ ...readingForm, ph: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
-                    <div><label className="block text-sm">{t('moisture')}</label><input type="number" value={readingForm.moisture} onChange={e => setReadingForm({ ...readingForm, moisture: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
-                    <div><label className="block text-sm">{t('nitrogen')}</label><input type="number" value={readingForm.nitrogen} onChange={e => setReadingForm({ ...readingForm, nitrogen: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
-                    <div><label className="block text-sm">{t('phosphorus')}</label><input type="number" value={readingForm.phosphorus} onChange={e => setReadingForm({ ...readingForm, phosphorus: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
-                    <div><label className="block text-sm">{t('potassium')}</label><input type="number" value={readingForm.potassium} onChange={e => setReadingForm({ ...readingForm, potassium: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
-                    <button type="submit" className="w-full py-2 bg-green-600 text-white rounded">{t('addReading')}</button>
-                </form>
-            </CustomModal>
+             <p className="text-xs text-gray-400 mt-4">{t('marketAnalysis')}</p>
         </SectionCard>
     );
 };
