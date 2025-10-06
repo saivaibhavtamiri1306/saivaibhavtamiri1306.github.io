@@ -11,6 +11,40 @@ import {
   Microscope, Pill, Lightbulb, BookUser, ArrowUp, ArrowDown, Send, Settings, Volume2, Globe, UploadCloud, Sun, Wind, X, Mic, VolumeX
 } from 'lucide-react';
 
+// --- Error Boundary Component ---
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    // Update state so the next render will show the fallback UI.
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    // You can also log the error to an error reporting service
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
+    this.setState({ error: error });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      // You can render any custom fallback UI
+      return (
+        <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+          <h3 className="font-bold">Something went wrong.</h3>
+          <p>{this.state.error?.toString()}</p>
+          <p>Please refresh the page and try again. Check the console for more details.</p>
+        </div>
+      );
+    }
+
+    return this.props.children; 
+  }
+}
+
 // --- Firebase Setup ---
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
