@@ -1400,57 +1400,61 @@ const AgriMarketAIModule = ({ userId, db, location, speakText }) => {
     const [error, setError] = useState('');
     const { t, language } = useLanguage();
 
-const handleAnalyze = async () => {
-    if (!searchQuery.trim()) return;
-    setIsAnalyzing(true); setError(''); setAnalysis(null);
-    
-    const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    
-    // Updated prompt: Removed mention of the search tool
-    const systemPrompt = `You are 'MarketMind AI', an agricultural market analyst for Indian farmers. Based on your training data up to your last update, provide a market analysis for today, ${currentDate}. Your response MUST be a single, valid JSON object with these keys: "marketSnapshot" (with "priceRange" in INR/quintal and "volatility"), "demandAndTrend" (with "demand" and "priceTrend"), "keyDrivers" (an array of strings), and "strategicRecommendation" (with "strategy" and "reasoning"). Respond in the language with this code: ${language}.`;
-    const userQuery = `Analyze the market for '${searchQuery}' in '${location.city}, ${location.state}'.`;
-
-    try {
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+    const handleAnalyze = async () => {
+        if (!searchQuery.trim()) return;
+        setIsAnalyzing(true); setError(''); setAnalysis(null);
         
-        // This payload forces JSON output but REMOVES the search tool
-        const payload = { 
-            contents: [{ parts: [{ text: userQuery }] }], 
-            systemInstruction: { parts: [{ text: systemPrompt }] }, 
-            generationConfig: {
-                responseMimeType: "application/json",
+        const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        const systemPrompt = `You are 'MarketMind AI', an agricultural market analyst for Indian farmers. Use your search tool to find the latest market data for today, ${currentDate}. Your response MUST be a single, valid JSON object and nothing else. Do not wrap it in markdown backticks. The JSON object must have these keys: "marketSnapshot" (an object with "priceRange" in INR/quintal and "volatility"), "demandAndTrend" (an object with "demand" and "priceTrend"), "keyDrivers" (an array of strings), and "strategicRecommendation" (an object with "strategy" and "reasoning"). Your entire response must be in the language with this code: ${language}.`;
+        const userQuery = `Analyze the market for '${searchQuery}' in '${location.city}, ${location.state}'.`;
+
+        try {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            
+            // This payload correctly uses the Search tool
+            const payload = { 
+                contents: [{ parts: [{ text: userQuery }] }], 
+                systemInstruction: { parts: [{ text: systemPrompt }] }, 
+                tools: [{ "google_search": {} }],
+            };
+
+            const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(`API Error: ${response.status} - ${JSON.stringify(errorBody)}`);
             }
-        };
+            
+            const result = await response.json();
+            let aiResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            
+            // --- PROTECTION 1: This try/catch block safely parses the AI's response ---
+            let parsedAnalysis;
+            try {
+                const jsonStartIndex = aiResponseText.indexOf('{');
+                if (jsonStartIndex === -1) {
+                    throw new Error("No JSON object found in the AI response.");
+                }
+                const jsonString = aiResponseText.substring(jsonStartIndex);
+                parsedAnalysis = JSON.parse(jsonString.replace(/```json/g, '').replace(/```/g, '').trim());
+            } catch (e) {
+                console.error("Failed to parse AI response JSON:", e);
+                throw new Error("The AI returned data in an invalid format.");
+            }
 
-        const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        
-        if (!response.ok) {
-            const errorBody = await response.json();
-            throw new Error(`API Error: ${response.status} - ${JSON.stringify(errorBody)}`);
+            setAnalysis(parsedAnalysis);
+
+            const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis?.strategicRecommendation?.strategy || 'check the details'}. ${parsedAnalysis?.strategicRecommendation?.reasoning || ''}`;
+            speakText(speechSummary);
+            
+        } catch (err) {
+            console.error("Analysis Error:", err);
+            setError(`${t('failedToGetAnalysis')} ${err.message}`);
+        } finally { 
+            setIsAnalyzing(false); 
         }
-        
-        const result = await response.json();
-        
-        const aiResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        const parsedAnalysis = JSON.parse(aiResponseText);
-
-        if (Object.keys(parsedAnalysis).length === 0) {
-             throw new Error("The AI returned an empty analysis. Please try a different query.");
-        }
-
-        setAnalysis(parsedAnalysis);
-
-        const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis?.strategicRecommendation?.strategy || 'check the details'}. ${parsedAnalysis?.strategicRecommendation?.reasoning || ''}`;
-        speakText(speechSummary);
-        
-    } catch (err) {
-        console.error("Analysis Error:", err);
-        setError(`${t('failedToGetAnalysis')} ${err.message}`);
-    } finally { 
-        setIsAnalyzing(false); 
-    }
-};
-                          
+    };
+    
     return (
         <SectionCard title={t('agriMarketAI')} icon={IndianRupee}>
              <p className="text-sm text-gray-500 mb-2">{t('location')} {location.city}, {location.state}</p>
@@ -1462,20 +1466,21 @@ const handleAnalyze = async () => {
             {isAnalyzing && <p className="text-center p-2 text-gray-600 animate-pulse">{t('fetchingMarketData')}</p>}
             {analysis && (
                 <div className="relative mt-4 p-3 bg-green-50 text-green-800 rounded-md text-sm animate-fade-in">
-                    <button onClick={() => speakText(`Market analysis for ${searchQuery}. The recommended strategy is to ${analysis.strategicRecommendation.strategy}. ${analysis.strategicRecommendation.reasoning}`)} className="absolute top-2 right-2 p-1 hover:bg-green-100 rounded-full"><Volume2 size={16}/></button>
+                    <button onClick={() => speakText(`Market analysis for ${searchQuery}. The recommended strategy is to ${analysis.strategicRecommendation?.strategy}. ${analysis.strategicRecommendation?.reasoning}`)} className="absolute top-2 right-2 p-1 hover:bg-green-100 rounded-full"><Volume2 size={16}/></button>
                     <p className="font-bold text-base">{searchQuery} Analysis</p>
+                    {/* --- PROTECTION 2: Optional chaining (?.) is used below to safely display the data --- */}
                     <p><span className="font-semibold">{t('priceRange')}</span> {analysis.marketSnapshot?.priceRange}</p>
                     <p className="font-semibold">{t('demand')} {analysis.demandAndTrend?.demand}</p>
                     <p className="font-semibold">{t('priceTrend')} {analysis.demandAndTrend?.priceTrend}</p>
                     <p className="font-semibold">{t('volatility')} {analysis.marketSnapshot?.volatility}</p>
                     <p className="font-bold mt-2">{t('strategy')} {analysis.strategicRecommendation?.strategy}</p>
-                    <p>{typeof analysis.strategicRecommendation?.reasoning === 'string' ? analysis.strategicRecommendation.reasoning : "Detailed reasoning available."}</p>
+                    <p>{analysis.strategicRecommendation?.reasoning || "Detailed reasoning available."}</p>
                 </div>
             )}
              <p className="text-xs text-gray-400 mt-4">{t('marketAnalysis')}</p>
         </SectionCard>
     );
-};
+};                                                
 
 // 6. Govt. Schemes AI Module
 const GramSevaAIModule = ({ userId, db, speakText }) => {
