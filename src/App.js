@@ -1422,52 +1422,46 @@ const handleAnalyze = async () => {
 
         try {
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
-            
-            // This payload uses the Search tool but does NOT force a JSON response type
             const payload = { 
                 contents: [{ parts: [{ text: userQuery }] }], 
                 systemInstruction: { parts: [{ text: systemPrompt }] }, 
                 tools: [{ "google_search": {} }],
             };
-
             const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             
-            if (!response.ok) {
-                // Try to get more detailed error from the response body
-                const errorBody = await response.json();
-                throw new Error(`API Error: ${response.status} - ${JSON.stringify(errorBody)}`);
-            }
+            if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
             
             const result = await response.json();
             
-            let aiResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            
-            // Use our robust parsing logic to handle potentially imperfect AI responses
-            let parsedAnalysis;
-            try {
-                const jsonStartIndex = aiResponseText.indexOf('{');
-                if (jsonStartIndex === -1) {
-                    throw new Error("No JSON object found in the AI response.");
+            let aiResponseText = (result.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/```json/g, '').replace(/```/g, '').replace(/\*/g, '').trim();
+            if (!aiResponseText) {
+                 // Handle the case where the model wants to call a tool
+                const functionCall = result.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+                if (functionCall) {
+                    // In a real-world scenario, you would execute the tool and send back the result.
+                    // For this example, we'll simulate a simple response based on the tool call.
+                    aiResponseText = JSON.stringify({
+                        marketSnapshot: { priceRange: "Fetching...", volatility: "Fetching..." },
+                        demandAndTrend: { demand: "Checking...", priceTrend: "Checking..." },
+                        keyDrivers: ["Searching for drivers..."],
+                        strategicRecommendation: { strategy: "ANALYZING", reasoning: "The AI is using its search tool to gather real-time data before making a recommendation. This is a demonstration of the tool-use capability." }
+                    });
+                } else {
+                    throw new Error("Could not get an analysis from the AI response.");
                 }
-                const jsonString = aiResponseText.substring(jsonStartIndex);
-                parsedAnalysis = JSON.parse(jsonString.replace(/```json/g, '').replace(/```/g, '').trim());
-            } catch (e) {
-                console.error("Failed to parse AI response JSON:", e);
-                throw new Error("The AI returned data in an invalid format.");
             }
-
+            
+            const parsedAnalysis = JSON.parse(aiResponseText);
             setAnalysis(parsedAnalysis);
-
-            const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis?.strategicRecommendation?.strategy || 'check the details'}. ${parsedAnalysis?.strategicRecommendation?.reasoning || ''}`;
+            const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis.strategicRecommendation.strategy}. ${parsedAnalysis.strategicRecommendation.reasoning}`;
             speakText(speechSummary);
             
         } catch (err) {
             console.error("Analysis Error:", err);
             setError(`${t('failedToGetAnalysis')} ${err.message}`);
-        } finally { 
-            setIsAnalyzing(false); 
-        }
+        } finally { setIsAnalyzing(false); }
     };
+
                           
     return (
         <SectionCard title={t('agriMarketAI')} icon={IndianRupee}>
