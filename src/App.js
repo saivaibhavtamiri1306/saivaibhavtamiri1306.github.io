@@ -1412,7 +1412,7 @@ const AgriMarketAIModule = ({ userId, db, location, speakText }) => {
     const [error, setError] = useState('');
     const { t, language } = useLanguage();
 
-    const handleAnalyze = async () => {
+const handleAnalyze = async () => {
         if (!searchQuery.trim()) return;
         setIsAnalyzing(true); setError(''); setAnalysis(null);
         
@@ -1433,33 +1433,37 @@ const AgriMarketAIModule = ({ userId, db, location, speakText }) => {
             
             const result = await response.json();
             
-            let aiResponseText = (result.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/```json/g, '').replace(/```/g, '').replace(/\*/g, '').trim();
-            if (!aiResponseText) {
-                 // Handle the case where the model wants to call a tool
-                const functionCall = result.candidates?.[0]?.content?.parts?.[0]?.functionCall;
-                if (functionCall) {
-                    // In a real-world scenario, you would execute the tool and send back the result.
-                    // For this example, we'll simulate a simple response based on the tool call.
-                    aiResponseText = JSON.stringify({
-                        marketSnapshot: { priceRange: "Fetching...", volatility: "Fetching..." },
-                        demandAndTrend: { demand: "Checking...", priceTrend: "Checking..." },
-                        keyDrivers: ["Searching for drivers..."],
-                        strategicRecommendation: { strategy: "ANALYZING", reasoning: "The AI is using its search tool to gather real-time data before making a recommendation. This is a demonstration of the tool-use capability." }
-                    });
-                } else {
-                    throw new Error("Could not get an analysis from the AI response.");
-                }
-            }
+            let aiResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
             
-            const parsedAnalysis = JSON.parse(aiResponseText);
+            // --- Start of New, Safer Parsing Block ---
+            let parsedAnalysis;
+            try {
+                // Find the start of the JSON object to handle extra text from the AI
+                const jsonStartIndex = aiResponseText.indexOf('{');
+                if (jsonStartIndex === -1) {
+                    throw new Error("No JSON object found in the AI response.");
+                }
+                // Extract and parse only the JSON part of the string
+                const jsonString = aiResponseText.substring(jsonStartIndex);
+                parsedAnalysis = JSON.parse(jsonString.replace(/```json/g, '').replace(/```/g, '').trim());
+            } catch (e) {
+                console.error("Failed to parse AI response JSON:", e);
+                throw new Error("The AI returned data in an invalid format. Please try again.");
+            }
+            // --- End of New, Safer Parsing Block ---
+
             setAnalysis(parsedAnalysis);
-            const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis.strategicRecommendation.strategy}. ${parsedAnalysis.strategicRecommendation.reasoning}`;
+
+            // --- Safely access properties using optional chaining (?.) to prevent crashes ---
+            const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis?.strategicRecommendation?.strategy || 'check the details'}. ${parsedAnalysis?.strategicRecommendation?.reasoning || ''}`;
             speakText(speechSummary);
             
         } catch (err) {
             console.error("Analysis Error:", err);
             setError(`${t('failedToGetAnalysis')} ${err.message}`);
-        } finally { setIsAnalyzing(false); }
+        } finally { 
+            setIsAnalyzing(false); 
+        }
     };
     
     return (
