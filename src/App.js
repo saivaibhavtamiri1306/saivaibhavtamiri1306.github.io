@@ -1155,13 +1155,25 @@ const SoilHealthModule = ({ userId, db, openPlotModal }) => {
         setModalOpen(false);
     };
 
-    const healthScore = useMemo(() => {
-        if (!latestReading || !selectedPlot?.crop || !CROP_DATA_SOIL[selectedPlot.crop]) return 0;
+const healthScore = useMemo(() => {
+        if (!latestReading || !selectedPlot?.crop) return 0;
+
+        // NEW: Check if the crop name exists in our data list before using it
         const ideals = CROP_DATA_SOIL[selectedPlot.crop];
+        if (!ideals) {
+            console.error(`Crop name "${selectedPlot.crop}" not found in CROP_DATA_SOIL. Health score cannot be calculated.`);
+            return 0; // Return 0 and prevent a crash if no match is found
+        }
+
         let score = 0;
         const metrics = ['ph', 'moisture', 'nitrogen', 'phosphorus', 'potassium'];
         metrics.forEach(m => {
-            if (latestReading[m] >= ideals[m][0] && latestReading[m] <= ideals[m][1]) score += 1;
+            // Ensure the reading and ideal values exist before comparing
+            if (latestReading[m] !== undefined && ideals[m]) {
+                if (latestReading[m] >= ideals[m][0] && latestReading[m] <= ideals[m][1]) {
+                    score += 1;
+                }
+            }
         });
         return (score / metrics.length) * 100;
     }, [latestReading, selectedPlot]);
