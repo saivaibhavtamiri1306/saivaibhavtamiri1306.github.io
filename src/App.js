@@ -1110,9 +1110,6 @@ const WeatherModule = ({ apiKey, location, setLocation }) => {
     );
 };
 
-// ... end of the WeatherModule component };
-
-// PASTE THE FOLLOWING CODE BLOCK HERE
 
 // 2. Soil Health Module (with Add Plot functionality)
 const SoilHealthModule = ({ userId, db, openPlotModal }) => {
@@ -1158,18 +1155,20 @@ const SoilHealthModule = ({ userId, db, openPlotModal }) => {
         setModalOpen(false);
     };
 
-    const healthScore = useMemo(() => {
+const healthScore = useMemo(() => {
         if (!latestReading || !selectedPlot?.crop) return 0;
 
+        // NEW: Check if the crop name exists in our data list before using it
         const ideals = CROP_DATA_SOIL[selectedPlot.crop];
         if (!ideals) {
             console.error(`Crop name "${selectedPlot.crop}" not found in CROP_DATA_SOIL. Health score cannot be calculated.`);
-            return 0;
+            return 0; // Return 0 and prevent a crash if no match is found
         }
 
         let score = 0;
         const metrics = ['ph', 'moisture', 'nitrogen', 'phosphorus', 'potassium'];
         metrics.forEach(m => {
+            // Ensure the reading and ideal values exist before comparing
             if (latestReading[m] !== undefined && ideals[m]) {
                 if (latestReading[m] >= ideals[m][0] && latestReading[m] <= ideals[m][1]) {
                     score += 1;
@@ -1193,13 +1192,7 @@ const SoilHealthModule = ({ userId, db, openPlotModal }) => {
                     {selectedPlot && latestReading ? (
                         <div className="mt-4 space-y-3">
                             <p className="text-xl font-bold text-green-700">{t('healthScore')} {healthScore.toFixed(0)}%</p>
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1">
-                                <div 
-                                    className="bg-green-600 h-2.5 rounded-full" 
-                                    style={{ width: `${healthScore.toFixed(0)}%` }}
-                                ></div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-sm pt-2">
+                            <div className="grid grid-cols-2 gap-2 text-sm">
                                 <p>{t('ph')}: {latestReading.ph}</p>
                                 <p>{t('moisture')}: {latestReading.moisture}%</p>
                                 <p>{t('nitrogen')}: {latestReading.nitrogen}ppm</p>
@@ -1231,8 +1224,6 @@ const SoilHealthModule = ({ userId, db, openPlotModal }) => {
         </SectionCard>
     );
 };
-
-// ...the next component should be const CropHealthAIModule = ...
 
 // 3. Crop Health AI Module
 const CropHealthAIModule = ({ userId, db, storage, appId, openPlotModal, isAuthReady, speakText }) => {
@@ -1513,8 +1504,7 @@ const AgriMarketAIModule = ({ userId, db, location, speakText }) => {
              <p className="text-xs text-gray-400 mt-4">{t('marketAnalysis')}</p>
         </SectionCard>
     );
-};                                                
-
+};
 // 6. Govt. Schemes AI Module
 const GramSevaAIModule = ({ userId, db, speakText }) => {
     const [form, setForm] = useState({ state: DEFAULT_STATE_NAME, farmerType: 'Small', crop: 'Rice', need: 'Crop Insurance' });
