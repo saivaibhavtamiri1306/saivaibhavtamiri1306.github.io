@@ -1110,6 +1110,130 @@ const WeatherModule = ({ apiKey, location, setLocation }) => {
     );
 };
 
+// ... end of the WeatherModule component };
+
+// PASTE THE FOLLOWING CODE BLOCK HERE
+
+// 2. Soil Health Module (with Add Plot functionality)
+const SoilHealthModule = ({ userId, db, openPlotModal }) => {
+    const [plots, setPlots] = useState([]);
+    const [selectedPlotId, setSelectedPlotId] = useState('');
+    const [latestReading, setLatestReading] = useState(null);
+    const [modalOpen, setModalOpen] = useState(false);
+    const [readingForm, setReadingForm] = useState({ ph: 7, moisture: 50, nitrogen: 50, phosphorus: 20, potassium: 100 });
+    const { t } = useLanguage();
+
+    useEffect(() => {
+        if (!userId || !db) return;
+        const q = query(collection(db, `artifacts/${appId}/users/${userId}/plots`), orderBy('createdAt', 'desc'));
+        return onSnapshot(q, snap => {
+            const fetchedPlots = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setPlots(fetchedPlots);
+            if (!selectedPlotId && fetchedPlots.length > 0) {
+                setSelectedPlotId(fetchedPlots[0].id);
+            } else if (selectedPlotId && !fetchedPlots.find(p => p.id === selectedPlotId)) {
+                setSelectedPlotId(fetchedPlots.length > 0 ? fetchedPlots[0].id : '');
+            }
+        });
+    }, [userId, db, selectedPlotId]);
+
+    const selectedPlot = useMemo(() => plots.find(p => p.id === selectedPlotId), [plots, selectedPlotId]);
+
+    useEffect(() => {
+        if (!selectedPlot || !userId || !db) {
+            setLatestReading(null);
+            return;
+        }
+        const rQuery = query(collection(db, `artifacts/${appId}/users/${userId}/plots/${selectedPlot.id}/readings`), orderBy('timestamp', 'desc'));
+        return onSnapshot(rQuery, s => {
+            const d = s.docs.map(doc => ({ ...doc.data(), id: doc.id, timestamp: doc.data().timestamp?.toDate() }));
+            setLatestReading(d.length > 0 ? d[0] : null);
+        });
+    }, [selectedPlot, userId, db]);
+
+    const handleAddReading = async (e) => {
+        e.preventDefault();
+        if (!selectedPlot || !userId || !db) return;
+        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/plots/${selectedPlot.id}/readings`), { ...readingForm, timestamp: serverTimestamp() });
+        setModalOpen(false);
+    };
+
+    const healthScore = useMemo(() => {
+        if (!latestReading || !selectedPlot?.crop) return 0;
+
+        const ideals = CROP_DATA_SOIL[selectedPlot.crop];
+        if (!ideals) {
+            console.error(`Crop name "${selectedPlot.crop}" not found in CROP_DATA_SOIL. Health score cannot be calculated.`);
+            return 0;
+        }
+
+        let score = 0;
+        const metrics = ['ph', 'moisture', 'nitrogen', 'phosphorus', 'potassium'];
+        metrics.forEach(m => {
+            if (latestReading[m] !== undefined && ideals[m]) {
+                if (latestReading[m] >= ideals[m][0] && latestReading[m] <= ideals[m][1]) {
+                    score += 1;
+                }
+            }
+        });
+        return (score / metrics.length) * 100;
+    }, [latestReading, selectedPlot]);
+
+    return (
+        <SectionCard title={t('soilHealth')} icon={Droplets}>
+            {plots.length > 0 ? (
+                <>
+                    <div className="flex gap-2 mb-4">
+                        <select value={selectedPlotId} onChange={e => setSelectedPlotId(e.target.value)} className="flex-grow p-2 border border-gray-300 rounded-md">
+                            {plots.map(p => <option key={p.id} value={p.id}>{p.name} ({p.crop})</option>)}
+                        </select>
+                        <button onClick={() => setModalOpen(true)} className="bg-green-600 text-white p-2 rounded-md hover:bg-green-700"><Plus size={20} /></button>
+                    </div>
+
+                    {selectedPlot && latestReading ? (
+                        <div className="mt-4 space-y-3">
+                            <p className="text-xl font-bold text-green-700">{t('healthScore')} {healthScore.toFixed(0)}%</p>
+                            <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1">
+                                <div 
+                                    className="bg-green-600 h-2.5 rounded-full" 
+                                    style={{ width: `${healthScore.toFixed(0)}%` }}
+                                ></div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-sm pt-2">
+                                <p>{t('ph')}: {latestReading.ph}</p>
+                                <p>{t('moisture')}: {latestReading.moisture}%</p>
+                                <p>{t('nitrogen')}: {latestReading.nitrogen}ppm</p>
+                                <p>{t('phosphorus')}: {latestReading.phosphorus}ppm</p>
+                                <p>{t('potassium')}: {latestReading.potassium}ppm</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-center text-gray-500">{t('selectPlotOrAddReading')}</p>
+                    )}
+                </>
+            ) : (
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <p className="text-gray-600">{t('noPlotsFound')}</p>
+                    <button onClick={openPlotModal} className="mt-2 text-sm text-green-600 font-semibold hover:underline">{t('addYourFirstPlot')}</button>
+                </div>
+            )}
+            
+            <CustomModal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={t('addSoilReading')}>
+                <form onSubmit={handleAddReading} className="space-y-4">
+                    <div><label className="block text-sm">{t('ph')}</label><input type="number" step="0.1" value={readingForm.ph} onChange={e => setReadingForm({ ...readingForm, ph: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
+                    <div><label className="block text-sm">{t('moisture')}</label><input type="number" value={readingForm.moisture} onChange={e => setReadingForm({ ...readingForm, moisture: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
+                    <div><label className="block text-sm">{t('nitrogen')}</label><input type="number" value={readingForm.nitrogen} onChange={e => setReadingForm({ ...readingForm, nitrogen: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
+                    <div><label className="block text-sm">{t('phosphorus')}</label><input type="number" value={readingForm.phosphorus} onChange={e => setReadingForm({ ...readingForm, phosphorus: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
+                    <div><label className="block text-sm">{t('potassium')}</label><input type="number" value={readingForm.potassium} onChange={e => setReadingForm({ ...readingForm, potassium: parseFloat(e.target.value) })} className="w-full p-2 border rounded" /></div>
+                    <button type="submit" className="w-full py-2 bg-green-600 text-white rounded">{t('addReading')}</button>
+                </form>
+            </CustomModal>
+        </SectionCard>
+    );
+};
+
+// ...the next component should be const CropHealthAIModule = ...
+
 // 3. Crop Health AI Module
 const CropHealthAIModule = ({ userId, db, storage, appId, openPlotModal, isAuthReady, speakText }) => {
     const [plots, setPlots] = useState([]);
