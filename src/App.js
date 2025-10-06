@@ -1425,55 +1425,55 @@ const AgriMarketAIModule = ({ userId, db, location, speakText }) => {
     const { t, language } = useLanguage();
 
 const handleAnalyze = async () => {
-        if (!searchQuery.trim()) return;
-        setIsAnalyzing(true); setError(''); setAnalysis(null);
+    if (!searchQuery.trim()) return;
+    setIsAnalyzing(true); setError(''); setAnalysis(null);
+    
+    const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    
+    // Updated prompt: Removed mention of the search tool
+    const systemPrompt = `You are 'MarketMind AI', an agricultural market analyst for Indian farmers. Based on your training data up to your last update, provide a market analysis for today, ${currentDate}. Your response MUST be a single, valid JSON object with these keys: "marketSnapshot" (with "priceRange" in INR/quintal and "volatility"), "demandAndTrend" (with "demand" and "priceTrend"), "keyDrivers" (an array of strings), and "strategicRecommendation" (with "strategy" and "reasoning"). Respond in the language with this code: ${language}.`;
+    const userQuery = `Analyze the market for '${searchQuery}' in '${location.city}, ${location.state}'.`;
+
+    try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
         
-        const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-        const systemPrompt = `You are 'MarketMind AI', an agricultural market analyst for Indian farmers. Use your search tool to find the latest market data for today, ${currentDate}. Your response MUST be a single, valid JSON object and nothing else. Do not wrap it in markdown backticks. The JSON object must have these keys: "marketSnapshot" (an object with "priceRange" in INR/quintal and "volatility"), "demandAndTrend" (an object with "demand" and "priceTrend"), "keyDrivers" (an array of strings), and "strategicRecommendation" (an object with "strategy" and "reasoning"). Your entire response must be in the language with this code: ${language}.`;
-        const userQuery = `Analyze the market for '${searchQuery}' in '${location.city}, ${location.state}'.`;
-
-        try {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
-            const payload = { 
-                contents: [{ parts: [{ text: userQuery }] }], 
-                systemInstruction: { parts: [{ text: systemPrompt }] }, 
-                tools: [{ "google_search": {} }],
-            };
-            const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            
-            if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-            
-            const result = await response.json();
-            
-            let aiResponseText = (result.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/```json/g, '').replace(/```/g, '').replace(/\*/g, '').trim();
-            if (!aiResponseText) {
-                 // Handle the case where the model wants to call a tool
-                const functionCall = result.candidates?.[0]?.content?.parts?.[0]?.functionCall;
-                if (functionCall) {
-                    // In a real-world scenario, you would execute the tool and send back the result.
-                    // For this example, we'll simulate a simple response based on the tool call.
-                    aiResponseText = JSON.stringify({
-                        marketSnapshot: { priceRange: "Fetching...", volatility: "Fetching..." },
-                        demandAndTrend: { demand: "Checking...", priceTrend: "Checking..." },
-                        keyDrivers: ["Searching for drivers..."],
-                        strategicRecommendation: { strategy: "ANALYZING", reasoning: "The AI is using its search tool to gather real-time data before making a recommendation. This is a demonstration of the tool-use capability." }
-                    });
-                } else {
-                    throw new Error("Could not get an analysis from the AI response.");
-                }
+        // This payload forces JSON output but REMOVES the search tool
+        const payload = { 
+            contents: [{ parts: [{ text: userQuery }] }], 
+            systemInstruction: { parts: [{ text: systemPrompt }] }, 
+            generationConfig: {
+                responseMimeType: "application/json",
             }
-            
-            const parsedAnalysis = JSON.parse(aiResponseText);
-            setAnalysis(parsedAnalysis);
-            const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis.strategicRecommendation.strategy}. ${parsedAnalysis.strategicRecommendation.reasoning}`;
-            speakText(speechSummary);
-            
-        } catch (err) {
-            console.error("Analysis Error:", err);
-            setError(`${t('failedToGetAnalysis')} ${err.message}`);
-        } finally { setIsAnalyzing(false); }
-    };
+        };
 
+        const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        
+        if (!response.ok) {
+            const errorBody = await response.json();
+            throw new Error(`API Error: ${response.status} - ${JSON.stringify(errorBody)}`);
+        }
+        
+        const result = await response.json();
+        
+        const aiResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        const parsedAnalysis = JSON.parse(aiResponseText);
+
+        if (Object.keys(parsedAnalysis).length === 0) {
+             throw new Error("The AI returned an empty analysis. Please try a different query.");
+        }
+
+        setAnalysis(parsedAnalysis);
+
+        const speechSummary = `Market analysis for ${searchQuery}. The recommended strategy is to ${parsedAnalysis?.strategicRecommendation?.strategy || 'check the details'}. ${parsedAnalysis?.strategicRecommendation?.reasoning || ''}`;
+        speakText(speechSummary);
+        
+    } catch (err) {
+        console.error("Analysis Error:", err);
+        setError(`${t('failedToGetAnalysis')} ${err.message}`);
+    } finally { 
+        setIsAnalyzing(false); 
+    }
+};
                           
     return (
         <SectionCard title={t('agriMarketAI')} icon={IndianRupee}>
