@@ -1190,28 +1190,30 @@ const SoilHealthModule = ({ userId, db, openPlotModal }) => {
     };
 
 const healthScore = useMemo(() => {
-        if (!latestReading || !selectedPlot?.crop) return 0;
+    if (!latestReading || !selectedPlot?.crop) return 0;
 
-        // NEW: Check if the crop name exists in our data list before using it
-        const ideals = CROP_DATA_SOIL[selectedPlot.crop];
-        if (!ideals) {
-            console.error(`Crop name "${selectedPlot.crop}" not found in CROP_DATA_SOIL. Health score cannot be calculated.`);
-            return 0; // Return 0 and prevent a crash if no match is found
-        }
+    // --- THIS IS THE FIX ---
+    // Capitalize the first letter of the crop name to ensure it matches
+    const cropName = selectedPlot.crop.charAt(0).toUpperCase() + selectedPlot.crop.slice(1);
+    const ideals = CROP_DATA_SOIL[cropName]; // Use the capitalized name here
 
-        let score = 0;
-        const metrics = ['ph', 'moisture', 'nitrogen', 'phosphorus', 'potassium'];
-        metrics.forEach(m => {
-            // Ensure the reading and ideal values exist before comparing
-            if (latestReading[m] !== undefined && ideals[m]) {
-                if (latestReading[m] >= ideals[m][0] && latestReading[m] <= ideals[m][1]) {
-                    score += 1;
-                }
+    if (!ideals) {
+        console.error(`Crop name "${selectedPlot.crop}" not found in CROP_DATA_SOIL. Health score cannot be calculated.`);
+        return 0;
+    }
+
+    let score = 0;
+    const metrics = ['ph', 'moisture', 'nitrogen', 'phosphorus', 'potassium'];
+    metrics.forEach(m => {
+        if (latestReading[m] !== undefined && ideals[m]) {
+            if (latestReading[m] >= ideals[m][0] && latestReading[m] <= ideals[m][1]) {
+                score += 1;
             }
-        });
-        return (score / metrics.length) * 100;
-    }, [latestReading, selectedPlot]);
-
+        }
+    });
+    return (score / metrics.length) * 100;
+}, [latestReading, selectedPlot]);
+  
     return (
         <SectionCard title={t('soilHealth')} icon={Droplets}>
             {plots.length > 0 ? (
